@@ -58,23 +58,19 @@ def get_gmail_service():
 
 # ---------- Fetching ----------
 
-def fetch_recent_block_trade_emails(service, hours_back=24):
-    """Returns list of {id, date (datetime utc), plaintext_body} for CME block trade emails."""
-    query = f"from:cmegroup.com newer_than:{max(1, hours_back // 24 + 1)}d"
-    results = service.users().messages().list(userId="me", q=query, maxResults=50).execute()
-    messages = results.get("messages", [])
-
-    # Only include emails received on the current New York calendar date.
-    # ZoneInfo automatically handles EST/EDT changes.
+def fetch_block_trade_emails_for_date(service, trade_date):
+    """Return CME block-trade emails received on the selected New York date."""
     eastern = ZoneInfo("America/New_York")
     today_et = datetime.now(eastern).date()
-
+    days_back = max(1, (today_et - trade_date).days + 2)
+    query = f"from:cmegroup.com newer_than:{days_back}d"
+    results = service.users().messages().list(userId="me", q=query, maxResults=100).execute()
     emails = []
-    for msg_meta in messages:
+    for msg_meta in results.get("messages", []):
         msg = service.users().messages().get(userId="me", id=msg_meta["id"], format="full").execute()
         date_ms = int(msg["internalDate"])
         date_utc = datetime.fromtimestamp(date_ms / 1000, tz=timezone.utc)
-        if date_utc.astimezone(eastern).date() != today_et:
+        if date_utc.astimezone(eastern).date() != trade_date:
             continue
         body = _extract_email_body(msg["payload"])
         emails.append({"id": msg_meta["id"], "date": date_utc, "body": body})
@@ -289,7 +285,10 @@ def build_headlines(parsed_rows):
     # Multi-leg CME spreads
     for _, group in spread_groups.items():
         first = group[0]
-        text = " & ".join(_format_leg(r) for r in group)
+        legs = [_format_leg(r) for r in group]
+        for i in range(1, len(legs)):
+            legs[i] = legs[i][0].lower() + legs[i][1:] if legs[i] else legs[i]
+        text = " & ".join(legs)
         add_headline("Spreads", first, text)
 
     # Chronological order within each section
@@ -307,36 +306,19 @@ def build_headlines(parsed_rows):
 
     return ordered
 
-def get_all_headlines(hours_back=24, seen_ids=None):
-    """
-    Main entry point for the Streamlit app.
-    Returns (headlines_by_category, new_message_ids, all_message_ids_seen_this_call)
-    seen_ids: set of message IDs already processed in a prior call, to skip re-parsing.
-    """
+def get_all_headlines(trade_date=None, seen_ids=None):
+    """Return headlines for one selected New York/ET calendar date."""
     seen_ids = seen_ids or set()
+    eastern = ZoneInfo("America/New_York")
+    if trade_date is None:
+        trade_date = datetime.now(eastern).date()
     service = get_gmail_service()
-    emails = fetch_recent_block_trade_emails(service, hours_back=hours_back)
-
+    emails = fetch_block_trade_emails_for_date(service, trade_date)
     new_ids = [e["id"] for e in emails if e["id"] not in seen_ids]
     all_ids = [e["id"] for e in emails]
-
     all_rows = []
     for e in emails:
         all_rows.extend(parse_rows(e["body"], e["date"]))
-
     headlines = build_headlines(all_rows)
     return headlines, new_ids, all_ids
 
-
-def get_parser_debug(hours_back=24):
-    """Temporary diagnostic: return parsed table rows from today's CME emails."""
-    service = get_gmail_service()
-    emails = fetch_recent_block_trade_emails(service, hours_back=hours_back)
-    output = []
-    for e in emails:
-        output.append({
-            "id": e["id"],
-            "date": e["date"].isoformat(),
-            "rows": debug_table_rows(e["body"]),
-        })
-    return output
