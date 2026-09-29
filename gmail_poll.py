@@ -317,18 +317,18 @@ def get_all_headlines(trade_date=None, seen_ids=None):
     new_ids = [e["id"] for e in emails if e["id"] not in seen_ids]
     all_ids = [e["id"] for e in emails]
     all_rows = []
-    seen_leg_signatures = set()
+    seen_trade_legs = set()
 
+    # Gmail results are normally newest-first. Keep the first complete occurrence
+    # of each CME trade and suppress repeated legs from older/later alert emails.
     for e in emails:
         email_rows = parse_rows(e["body"], e["date"])
         if not email_rows:
             continue
 
-        # CME may repeat an already-reported block inside a later alert. Deduplicate
-        # at leg level rather than requiring the entire email body to be identical.
-        unique_rows = []
+        email_signatures = []
         for row in email_rows:
-            leg_signature = (
+            sig = (
                 row["ct_dt"],
                 row["type"].strip().lower(),
                 row["product"].strip(),
@@ -338,13 +338,18 @@ def get_all_headlines(trade_date=None, seen_ids=None):
                 row["side"].strip().lower(),
                 row["price"].strip(),
             )
-            if leg_signature in seen_leg_signatures:
-                continue
-            seen_leg_signatures.add(leg_signature)
-            row["email_id"] = e["id"]
-            unique_rows.append(row)
+            email_signatures.append(sig)
 
-        all_rows.extend(unique_rows)
+        # If any leg in this email has already been seen, this is CME repeating
+        # the same block alert. Skip the whole email so we never leave an orphan
+        # one-leg "spread" behind after deduplication.
+        if any(sig in seen_trade_legs for sig in email_signatures):
+            continue
+
+        for row, sig in zip(email_rows, email_signatures):
+            seen_trade_legs.add(sig)
+            row["email_id"] = e["id"]
+            all_rows.append(row)
 
     # Desk view: newest block trades first.
     all_rows.sort(key=lambda r: r["ct_dt"], reverse=True)
