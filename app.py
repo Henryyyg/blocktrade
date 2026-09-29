@@ -33,7 +33,7 @@ if not st.session_state.get("authenticated", False):
     st.stop()
 
 
-REFRESH_SECONDS = 120
+REFRESH_SECONDS = 60
 
 st.title("Block Trade Headlines")
 
@@ -44,7 +44,7 @@ with st.sidebar:
     trade_date = st.date_input("Trade date (ET)", value=today_et, max_value=today_et)
     notifications_on = st.checkbox("Sound notification for new blocks", value=True)
     manual_refresh = st.button("Refresh now")
-    st.caption("Live feed checks automatically every 120 seconds.")
+    st.caption("Live feed checks automatically every 60 seconds.")
 
 
 # --- Session state for tracking seen emails ---
