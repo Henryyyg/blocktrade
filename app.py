@@ -93,13 +93,13 @@ def live_block_feed():
     
             for r in rows:
                 if r["type"].strip().lower() == "spread":
-                    spread_key = r["ct_dt"]
+                    spread_key = (r.get("email_id"), r["ct_dt"])
                     if spread_key in used_spreads:
                         continue
                     used_spreads.add(spread_key)
                     group = [
                         x for x in rows
-                        if x["type"].strip().lower() == "spread" and x["ct_dt"] == spread_key
+                        if x["type"].strip().lower() == "spread" and (x.get("email_id"), x["ct_dt"]) == spread_key
                     ]
                     display_groups.append(("spread", group))
                 else:
