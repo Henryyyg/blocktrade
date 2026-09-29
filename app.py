@@ -12,7 +12,7 @@ from gmail_poll import get_all_headlines
 
 st.set_page_config(page_title="Block Trade Headlines", layout="wide")
 
-REFRESH_SECONDS = 60
+REFRESH_SECONDS = 120
 
 st.title("Block Trade Headlines")
 
@@ -22,6 +22,7 @@ with st.sidebar:
     today_et = datetime.now(ZoneInfo("America/New_York")).date()
     trade_date = st.date_input("Trade date (ET)", value=today_et, max_value=today_et)
     refresh_seconds = st.number_input("Auto-refresh every (seconds)", min_value=15, max_value=600, value=REFRESH_SECONDS)
+    notifications_on = st.checkbox("Sound notification for new blocks", value=True)
     manual_refresh = st.button("Refresh now")
     st.caption("Auto-refreshing. Turn this tab's auto-refresh off by closing it — no data is lost, it just re-polls on reopen.")
 
@@ -46,6 +47,8 @@ try:
     st.session_state.last_checked = time.strftime("%H:%M:%S")
     if new_ids:
         st.toast(f"{len(new_ids)} new block trade email(s) found", icon="📬")
+        if notifications_on and st.session_state.last_checked is not None:
+            st.components.v1.html('<audio autoplay><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=" type="audio/wav"></audio>', height=0)
 except FileNotFoundError:
     error = "credentials.json or token.json not found. Follow gmail_api_setup.md first."
 except Exception as e:
