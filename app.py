@@ -55,17 +55,20 @@ if "alerts_initialized" not in st.session_state:
     st.session_state.alerts_initialized = False
 if "last_headlines" not in st.session_state:
     st.session_state.last_headlines = {}
+if "last_trade_rows" not in st.session_state:
+    st.session_state.last_trade_rows = []
 if "last_checked" not in st.session_state:
     st.session_state.last_checked = None
 
 # --- Fetch ---
 error = None
 try:
-    headlines, new_ids, all_ids = get_all_headlines(
+    headlines, new_ids, all_ids, trade_rows = get_all_headlines(
         trade_date=trade_date,
         seen_ids=st.session_state.seen_ids
     )
     st.session_state.last_headlines = headlines
+    st.session_state.last_trade_rows = trade_rows
     st.session_state.seen_ids.update(all_ids)
     st.session_state.last_checked = time.strftime("%H:%M:%S")
     # On the first load/reload, establish today's existing emails as the baseline.
@@ -99,10 +102,27 @@ else:
             full_text_parts.append("")
         full_text = "\n".join(full_text_parts).strip()
 
-        for category, items in headlines.items():
-            st.subheader(category)
-            for h in items:
-                st.markdown(f"- {h['line']}")
+        # CME-style view of the underlying parsed trades.
+        table_rows = []
+        for r in st.session_state.last_trade_rows:
+            table_rows.append({
+                "Time (ET)": r["time_et"],
+                "Type": r["type"],
+                "Product": r["product"],
+                "Symbol": r["sym"],
+                "Qty": r["qty_raw"],
+                "C/P & Strike": r["cp_strike"] or "",
+                "B/S": r["side"],
+                "Price": r["price"].replace("-", "'"),
+            })
+
+        st.subheader("Block Trades")
+        st.dataframe(
+            table_rows,
+            use_container_width=True,
+            hide_index=True,
+            column_order=["Time (ET)", "Type", "Product", "Symbol", "Qty", "C/P & Strike", "B/S", "Price"],
+        )
 
         st.divider()
         st.text_area("Copy for headline", value=full_text, height=300)
