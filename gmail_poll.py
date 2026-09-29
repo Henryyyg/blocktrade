@@ -191,6 +191,35 @@ def parse_rows(plaintext_body, email_date_utc):
     return parsed
 
 
+
+def _option_details(cp_strike):
+    """Convert CME notation such as C107.50 / P106.50 to desk wording."""
+    value = cp_strike.strip()
+    match = re.match(r"^([CP])\\s*([0-9.]+)$", value, re.IGNORECASE)
+    if not match:
+        return value
+    option_type = "calls" if match.group(1).upper() == "C" else "puts"
+    return f"{match.group(2)} {option_type}"
+
+
+def _action_word(side):
+    side = side.strip().lower()
+    if side == "buy":
+        return "Bought"
+    if side == "sell":
+        return "Sold"
+    return side.capitalize()
+
+
+def _format_leg(r):
+    """Format one leg in the normal block-trade headline style."""
+    action = _action_word(r["side"])
+    if r["cp_strike"]:
+        price_word = "for" if r["side"].strip().lower() == "buy" else "at"
+        option = _option_details(r["cp_strike"])
+        return f"{action} {r['qty']} {r['product']}, {option} ({r['sym']}) {price_word} {r['price']}"
+    return f"{action} {r['qty']} {r['product']} ({r['sym']}) at {r['price']}"
+
 def build_headlines(parsed_rows):
     """
     Build copy-ready headlines in the desk format:
