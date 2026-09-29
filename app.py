@@ -5,6 +5,7 @@ Setup: see gmail_api_setup.md. Requires credentials.json + token.json in this fo
 Run: streamlit run app.py
 """
 import time
+import hashlib
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import streamlit as st
@@ -136,7 +137,13 @@ def live_block_feed():
                 )
     
             st.divider()
-            st.text_area("Copy for headline", value=full_text, height=300)
+            headline_key = hashlib.sha1(full_text.encode("utf-8")).hexdigest()[:12]
+            st.text_area(
+                "Copy for headline",
+                value=full_text,
+                height=300,
+                key=f"headline_copy_{headline_key}",
+            )
     
     
 
