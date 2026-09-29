@@ -6,7 +6,7 @@ Run: streamlit run app.py
 """
 import time
 import streamlit as st
-from gmail_poll import get_all_headlines
+from gmail_poll import get_all_headlines, get_parser_debug
 
 st.set_page_config(page_title="Block Trade Headlines", layout="wide")
 
@@ -21,7 +21,17 @@ with st.sidebar:
     hours_back = st.number_input("Look back (hours)", min_value=1, max_value=72, value=HOURS_BACK)
     refresh_seconds = st.number_input("Auto-refresh every (seconds)", min_value=15, max_value=600, value=REFRESH_SECONDS)
     manual_refresh = st.button("Refresh now")
+    debug_parser = st.checkbox("Parser debug", value=False)
     st.caption("Auto-refreshing. Turn this tab's auto-refresh off by closing it — no data is lost, it just re-polls on reopen.")
+
+
+# --- Temporary parser diagnostic ---
+if debug_parser:
+    try:
+        st.subheader("Parser debug")
+        st.json(get_parser_debug(hours_back=hours_back))
+    except Exception as e:
+        st.error(f"Parser debug error: {e}")
 
 # --- Session state for tracking seen emails ---
 if "seen_ids" not in st.session_state:
