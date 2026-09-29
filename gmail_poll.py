@@ -293,7 +293,7 @@ def build_headlines(parsed_rows):
 
     # Chronological order within each section
     for category in headlines_by_category:
-        headlines_by_category[category].sort(key=lambda h: h["sort_key"])
+        headlines_by_category[category].sort(key=lambda h: h["sort_key"], reverse=True)
 
     # Keep the display/copy order consistent
     ordered = {}
@@ -317,11 +317,38 @@ def get_all_headlines(trade_date=None, seen_ids=None):
     new_ids = [e["id"] for e in emails if e["id"] not in seen_ids]
     all_ids = [e["id"] for e in emails]
     all_rows = []
+    seen_trade_signatures = set()
+
     for e in emails:
         email_rows = parse_rows(e["body"], e["date"])
+        if not email_rows:
+            continue
+
+        # CME can deliver the same block alert more than once. Treat emails
+        # containing the exact same trade/legs as one block trade.
+        trade_signature = tuple(
+            (
+                r["ct_dt"],
+                r["type"],
+                r["product"],
+                r["sym"],
+                r["qty_raw"],
+                r["cp_strike"],
+                r["side"],
+                r["price"],
+            )
+            for r in email_rows
+        )
+        if trade_signature in seen_trade_signatures:
+            continue
+        seen_trade_signatures.add(trade_signature)
+
         for row in email_rows:
             row["email_id"] = e["id"]
         all_rows.extend(email_rows)
+
+    # Desk view: newest block trades first.
+    all_rows.sort(key=lambda r: r["ct_dt"], reverse=True)
     headlines = build_headlines(all_rows)
     return headlines, new_ids, all_ids, all_rows
 
