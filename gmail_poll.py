@@ -8,6 +8,7 @@ import json
 import base64
 import html
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -63,13 +64,17 @@ def fetch_recent_block_trade_emails(service, hours_back=24):
     results = service.users().messages().list(userId="me", q=query, maxResults=50).execute()
     messages = results.get("messages", [])
 
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+    # Only include emails received on the current New York calendar date.
+    # ZoneInfo automatically handles EST/EDT changes.
+    eastern = ZoneInfo("America/New_York")
+    today_et = datetime.now(eastern).date()
+
     emails = []
     for msg_meta in messages:
         msg = service.users().messages().get(userId="me", id=msg_meta["id"], format="full").execute()
         date_ms = int(msg["internalDate"])
         date_utc = datetime.fromtimestamp(date_ms / 1000, tz=timezone.utc)
-        if date_utc < cutoff:
+        if date_utc.astimezone(eastern).date() != today_et:
             continue
         body = _extract_email_body(msg["payload"])
         emails.append({"id": msg_meta["id"], "date": date_utc, "body": body})
