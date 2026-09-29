@@ -61,7 +61,7 @@ if "last_checked" not in st.session_state:
 
 # --- Live polling ---
 @st.fragment(run_every=REFRESH_SECONDS)
-    def live_block_feed():
+def live_block_feed():
     error = None
     try:
         headlines, new_ids, all_ids, trade_rows = get_all_headlines(
