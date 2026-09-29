@@ -147,7 +147,7 @@ def live_block_feed():
                     table_rows,
                     use_container_width=True,
                     hide_index=True,
-                    column_order=["Time (ET)", "Time (BST)", "Type", "Product", "Symbol", "Qty", "C/P & Strike", "B/S", "Price"],
+                    column_order=["Time (ET/BST)", "Type", "Product", "Symbol", "Qty", "C/P & Strike", "B/S", "Price"],
                 )
     
             st.divider()
