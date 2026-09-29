@@ -184,13 +184,16 @@ def parse_rows(plaintext_body, email_date_utc):
                 current_time = time_raw
             if ttype:
                 current_type = ttype
-        elif len(cells) == 7:
-            # TIME and TYPE are row-spanned from the first leg of the spread.
+        elif len(cells) == 6:
+            # CME row-spans TIME/TYPE and omits NET PRICE on continuation legs.
+            # Actual continuation layout:
+            # PRODUCT, SYM, QTY, C/P & STRIKE, B/S, PRICE
             if not current_time:
                 continue
             time_raw = current_time
             ttype = current_type
-            product, sym, net_price, qty, cp_strike, side, price = cells
+            product, sym, qty, cp_strike, side, price = cells
+            net_price = ""
         else:
             continue
 
