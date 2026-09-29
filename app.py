@@ -51,6 +51,8 @@ with st.sidebar:
 # --- Session state for tracking seen emails ---
 if "seen_ids" not in st.session_state:
     st.session_state.seen_ids = set()
+if "alerts_initialized" not in st.session_state:
+    st.session_state.alerts_initialized = False
 if "last_headlines" not in st.session_state:
     st.session_state.last_headlines = {}
 if "last_checked" not in st.session_state:
@@ -66,10 +68,13 @@ try:
     st.session_state.last_headlines = headlines
     st.session_state.seen_ids.update(all_ids)
     st.session_state.last_checked = time.strftime("%H:%M:%S")
-    if new_ids:
+    # On the first load/reload, establish today's existing emails as the baseline.
+    # Only alert for IDs that appear on a later poll in the same Streamlit session.
+    if st.session_state.alerts_initialized and new_ids:
         st.toast(f"{len(new_ids)} new block trade email(s) found", icon="📬")
-        if notifications_on and st.session_state.last_checked is not None:
+        if notifications_on:
             st.components.v1.html('<audio autoplay><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=" type="audio/wav"></audio>', height=0)
+    st.session_state.alerts_initialized = True
 except FileNotFoundError:
     error = "credentials.json or token.json not found. Follow gmail_api_setup.md first."
 except Exception as e:
