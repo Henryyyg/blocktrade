@@ -12,6 +12,24 @@ from gmail_poll import get_all_headlines
 
 st.set_page_config(page_title="Block Trade Headlines", layout="wide")
 
+
+# --- Simple access gate ---
+if not st.session_state.get("authenticated", False):
+    st.title("Block Trade Headlines")
+    st.subheader("Newsquawk access")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Log in"):
+        if username == "Newsquawk" and password == "Blocktrade":
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Incorrect username or password.")
+
+    st.stop()
+
+
 REFRESH_SECONDS = 120
 
 st.title("Block Trade Headlines")
