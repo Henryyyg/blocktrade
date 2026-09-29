@@ -6,7 +6,9 @@ Run: streamlit run app.py
 """
 import time
 import streamlit as st
-from gmail_poll import get_all_headlines, get_parser_debug
+import gmail_poll
+
+get_all_headlines = gmail_poll.get_all_headlines
 
 st.set_page_config(page_title="Block Trade Headlines", layout="wide")
 
@@ -29,7 +31,11 @@ with st.sidebar:
 if debug_parser:
     try:
         st.subheader("Parser debug")
-        st.json(get_parser_debug(hours_back=hours_back))
+        debug_fn = getattr(gmail_poll, "get_parser_debug", None)
+        if debug_fn is None:
+            st.warning("Parser debug helper is not loaded yet. Refresh once after deployment.")
+        else:
+            st.json(debug_fn(hours_back=hours_back))
     except Exception as e:
         st.error(f"Parser debug error: {e}")
 
