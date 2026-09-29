@@ -102,27 +102,52 @@ else:
             full_text_parts.append("")
         full_text = "\n".join(full_text_parts).strip()
 
-        # CME-style view of the underlying parsed trades.
-        table_rows = []
-        for r in st.session_state.last_trade_rows:
-            table_rows.append({
-                "Time (ET)": r["time_et"],
-                "Type": r["type"],
-                "Product": r["product"],
-                "Symbol": r["sym"],
-                "Qty": r["qty_raw"],
-                "C/P & Strike": r["cp_strike"] or "",
-                "B/S": r["side"],
-                "Price": r["price"].replace("-", "'"),
-            })
-
+        # CME-style view. Group spread legs together so it is visually clear
+        # that rows sharing a spread timestamp belong to one block trade.
         st.subheader("Block Trades")
-        st.dataframe(
-            table_rows,
-            use_container_width=True,
-            hide_index=True,
-            column_order=["Time (ET)", "Type", "Product", "Symbol", "Qty", "C/P & Strike", "B/S", "Price"],
-        )
+        rows = st.session_state.last_trade_rows
+        display_groups = []
+        used_spreads = set()
+
+        for r in rows:
+            if r["type"].strip().lower() == "spread":
+                spread_key = r["ct_dt"]
+                if spread_key in used_spreads:
+                    continue
+                used_spreads.add(spread_key)
+                group = [
+                    x for x in rows
+                    if x["type"].strip().lower() == "spread" and x["ct_dt"] == spread_key
+                ]
+                display_groups.append(("spread", group))
+            else:
+                display_groups.append(("single", [r]))
+
+        for group_type, group in display_groups:
+            if group_type == "spread":
+                st.markdown(
+                    f"**Spread trade · {group[0]['time_et']} ET · {len(group)} legs**"
+                )
+
+            table_rows = []
+            for r in group:
+                table_rows.append({
+                    "Time (ET)": r["time_et"],
+                    "Type": r["type"],
+                    "Product": r["product"],
+                    "Symbol": r["sym"],
+                    "Qty": r["qty_raw"],
+                    "C/P & Strike": r["cp_strike"] or "",
+                    "B/S": r["side"],
+                    "Price": r["price"].replace("-", "'"),
+                })
+
+            st.dataframe(
+                table_rows,
+                use_container_width=True,
+                hide_index=True,
+                column_order=["Time (ET)", "Type", "Product", "Symbol", "Qty", "C/P & Strike", "B/S", "Price"],
+            )
 
         st.divider()
         st.text_area("Copy for headline", value=full_text, height=300)
