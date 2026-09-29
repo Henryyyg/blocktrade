@@ -160,9 +160,54 @@ def parse_rows(plaintext_body, email_date_utc):
         })
     return parsed
 
+def _option_details(cp_strike):
+    """Convert CME option notation such as C104.50 / P106.50 to headline wording."""
+    value = cp_strike.strip()
+    if not value:
+        return None
+    match = re.match(r"^([CP])\\s*([0-9.]+)$", value, re.IGNORECASE)
+    if not match:
+        return value
+    option_type = "calls" if match.group(1).upper() == "C" else "puts"
+    return f"{match.group(2)} {option_type}"
+
+
+def _action_word(side):
+    side = side.strip().lower()
+    if side == "buy":
+        return "Bought"
+    if side == "sell":
+        return "Sold"
+    return side.capitalize()
+
+
+def _format_leg(r):
+    """Format one option/futures leg in Henry's normal squawk style."""
+    action = _action_word(r["side"])
+    qty = r["qty"]
+    price_word = "for" if r["side"].strip().lower() == "buy" else "at"
+
+    if r["cp_strike"]:
+        option = _option_details(r["cp_strike"])
+        return f"{action} {qty} {r['product']}, {option} ({r['sym']}) {price_word} {r['price']}"
+
+    # Futures leg inside a spread
+    return f"{action} {qty} {r['product']} ({r['sym']}) at {r['price']}"
+
+
 def build_headlines(parsed_rows):
+    """
+    Build copy-ready headlines in the desk format:
+      Futures
+      Options
+      Spreads
+
+    CME rows marked as Spread and sharing the same trade timestamp are combined
+    into one headline, so an option leg + futures hedge prints on one line.
+    """
     spread_groups = {}
     singles = []
+
     for r in parsed_rows:
         if r["type"].strip().lower() == "spread":
             spread_groups.setdefault(r["ct_dt"], []).append(r)
@@ -171,38 +216,41 @@ def build_headlines(parsed_rows):
 
     headlines_by_category = {}
 
-    def add_headline(category, time_et, time_bst, text, sort_dt):
+    def add_headline(category, r, text):
         headlines_by_category.setdefault(category, []).append({
-            "sort_key": sort_dt,
-            "line": f"{time_et}ET/{time_bst}BST: {text}"
+            "sort_key": r["ct_dt"],
+            "line": f"{r['time_et']}ET/{r['time_bst']}BST: {text}"
         })
 
+    # Outright futures / options
     for r in singles:
-        text = f"{r['qty']} {r['product']} ({r['sym']}) at {r['price']}"
-        add_headline(r["category"], r["time_et"], r["time_bst"], text, r["ct_dt"])
+        if r["cp_strike"]:
+            text = _format_leg(r)
+            add_headline("Options", r, text)
+        else:
+            text = f"{r['qty']} {r['product']} ({r['sym']}) at {r['price']}"
+            add_headline("Futures", r, text)
 
-    for ct_dt, group in spread_groups.items():
-        actions = []
-        product_sym_pairs = []
-        for r in group:
-            pair = (r["product"], r["sym"])
-            if pair not in product_sym_pairs:
-                product_sym_pairs.append(pair)
-            side_word = {"buy": "Buys", "sell": "Sells"}.get(r["side"].strip().lower(), r["side"] + "s")
-            if r["cp_strike"]:
-                actions.append(f"{side_word} {r['qty_raw']} {r['cp_strike']} at {r['price']}")
-            else:
-                actions.append(f"{side_word} {r['qty_raw']} {r['sym']} futures at {r['price']}")
-
-        product_label = " and ".join(f"{p} ({s})" for p, s in product_sym_pairs)
+    # Multi-leg CME spreads
+    for _, group in spread_groups.items():
         first = group[0]
-        text = f"{product_label} ({', '.join(actions)})"
-        add_headline(first["category"], first["time_et"], first["time_bst"], text, ct_dt)
+        text = " & ".join(_format_leg(r) for r in group)
+        add_headline("Spreads", first, text)
 
-    for cat in headlines_by_category:
-        headlines_by_category[cat].sort(key=lambda h: h["sort_key"])
+    # Chronological order within each section
+    for category in headlines_by_category:
+        headlines_by_category[category].sort(key=lambda h: h["sort_key"])
 
-    return headlines_by_category
+    # Keep the display/copy order consistent
+    ordered = {}
+    for category in ("Futures", "Options", "Spreads", "SOFR", "Fed Funds"):
+        if category in headlines_by_category:
+            ordered[category] = headlines_by_category[category]
+    for category, items in headlines_by_category.items():
+        if category not in ordered:
+            ordered[category] = items
+
+    return ordered
 
 def get_all_headlines(hours_back=24, seen_ids=None):
     """
