@@ -124,11 +124,16 @@ def live_block_feed():
                 else:
                     display_groups.append(("single", [r]))
     
+            last_section = None
             for group_type, group in display_groups:
                 if group_type == "spread":
                     st.markdown(
                         f"**Spread trade · {group[0]['time_et']} ET · {len(group)} legs**"
                     )
+                    last_section = "spread"
+                elif last_section != "futures":
+                    st.markdown("**Futures**")
+                    last_section = "futures"
     
                 table_rows = []
                 for r in group:
