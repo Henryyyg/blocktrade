@@ -169,8 +169,8 @@ def parse_rows(plaintext_body, email_date_utc):
     for row_html in TR_RE.findall(plaintext_body):
         cells = [clean(x) for x in TD_RE.findall(row_html)]
 
-        # Header/non-trade rows.
-        if len(cells) < 7:
+        # Header/non-trade rows. CME spread continuation legs have 6 cells.
+        if len(cells) < 6:
             continue
 
         if len(cells) >= 9:
