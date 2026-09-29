@@ -73,14 +73,13 @@ else:
             full_text_parts.append("")
         full_text = "\n".join(full_text_parts).strip()
 
-        st.text_area("Copy for client email", value=full_text, height=300)
-
-        st.divider()
-
         for category, items in headlines.items():
             st.subheader(category)
             for h in items:
                 st.markdown(f"- {h['line']}")
+
+        st.divider()
+        st.text_area("Copy for headline", value=full_text, height=300)
 
 # --- Auto-refresh loop ---
 if not manual_refresh:
