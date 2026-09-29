@@ -42,10 +42,9 @@ with st.sidebar:
     st.header("Settings")
     today_et = datetime.now(ZoneInfo("America/New_York")).date()
     trade_date = st.date_input("Trade date (ET)", value=today_et, max_value=today_et)
-    refresh_seconds = st.number_input("Auto-refresh every (seconds)", min_value=15, max_value=600, value=REFRESH_SECONDS)
     notifications_on = st.checkbox("Sound notification for new blocks", value=True)
     manual_refresh = st.button("Refresh now")
-    st.caption("Auto-refreshing. Turn this tab's auto-refresh off by closing it — no data is lost, it just re-polls on reopen.")
+    st.caption("Live feed checks automatically every 120 seconds.")
 
 
 # --- Session state for tracking seen emails ---
@@ -60,111 +59,103 @@ if "last_trade_rows" not in st.session_state:
 if "last_checked" not in st.session_state:
     st.session_state.last_checked = None
 
-# --- Fetch ---
-error = None
-try:
-    headlines, new_ids, all_ids, trade_rows = get_all_headlines(
-        trade_date=trade_date,
-        seen_ids=st.session_state.seen_ids
-    )
-    st.session_state.last_headlines = headlines
-    st.session_state.last_trade_rows = trade_rows
-    st.session_state.seen_ids.update(all_ids)
-    st.session_state.last_checked = time.strftime("%H:%M:%S")
-    # On the first load/reload, establish today's existing emails as the baseline.
-    # Only alert for IDs that appear on a later poll in the same Streamlit session.
-    if st.session_state.alerts_initialized and new_ids:
-        st.toast(f"{len(new_ids)} new block trade email(s) found", icon="📬")
-        if notifications_on:
-            st.components.v1.html('<audio autoplay><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=" type="audio/wav"></audio>', height=0)
-    st.session_state.alerts_initialized = True
-except FileNotFoundError:
-    error = "credentials.json or token.json not found. Follow gmail_api_setup.md first."
-except Exception as e:
-    error = f"Error fetching from Gmail: {e}"
-
-if error:
-    st.error(error)
-else:
-    st.caption(f"Last checked: {st.session_state.last_checked} · trade date {trade_date.strftime('%d/%m/%Y')} ET")
-
-    headlines = st.session_state.last_headlines
-    if not headlines:
-        st.info("No block trades found for this ET date.")
+# --- Live polling ---
+@st.fragment(run_every=REFRESH_SECONDS)
+    def live_block_feed():
+    error = None
+    try:
+        headlines, new_ids, all_ids, trade_rows = get_all_headlines(
+            trade_date=trade_date,
+            seen_ids=st.session_state.seen_ids
+        )
+        st.session_state.last_headlines = headlines
+        st.session_state.last_trade_rows = trade_rows
+        st.session_state.seen_ids.update(all_ids)
+        st.session_state.last_checked = time.strftime("%H:%M:%S")
+        # On the first load/reload, establish today's existing emails as the baseline.
+        # Only alert for IDs that appear on a later poll in the same Streamlit session.
+        if st.session_state.alerts_initialized and new_ids:
+            st.toast(f"{len(new_ids)} new block trade email(s) found", icon="📬")
+            if notifications_on:
+                st.components.v1.html('<audio autoplay><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=" type="audio/wav"></audio>', height=0)
+        st.session_state.alerts_initialized = True
+    except FileNotFoundError:
+        error = "credentials.json or token.json not found. Follow gmail_api_setup.md first."
+    except Exception as e:
+        error = f"Error fetching from Gmail: {e}"
+    
+    if error:
+        st.error(error)
     else:
-        # Build plain-text version for easy copy-paste to clients
-        full_text_parts = []
-        for category, items in headlines.items():
-            full_text_parts.append(category)
-            full_text_parts.append("")
-            for h in items:
-                full_text_parts.append(f"* {h['line']}")
-            full_text_parts.append("")
-        full_text = "\n".join(full_text_parts).strip()
-
-        # CME-style view. Group spread legs together so it is visually clear
-        # that rows sharing a spread timestamp belong to one block trade.
-        st.subheader("Block Trades")
-        rows = st.session_state.last_trade_rows
-        display_groups = []
-        used_spreads = set()
-
-        for r in rows:
-            if r["type"].strip().lower() == "spread":
-                spread_key = r["ct_dt"]
-                if spread_key in used_spreads:
-                    continue
-                used_spreads.add(spread_key)
-                group = [
-                    x for x in rows
-                    if x["type"].strip().lower() == "spread" and x["ct_dt"] == spread_key
-                ]
-                display_groups.append(("spread", group))
-            else:
-                display_groups.append(("single", [r]))
-
-        for group_type, group in display_groups:
-            if group_type == "spread":
-                st.markdown(
-                    f"**Spread trade · {group[0]['time_et']} ET · {len(group)} legs**"
+        st.caption(f"Last checked: {st.session_state.last_checked} · trade date {trade_date.strftime('%d/%m/%Y')} ET")
+    
+        headlines = st.session_state.last_headlines
+        if not headlines:
+            st.info("No block trades found for this ET date.")
+        else:
+            # Build plain-text version for easy copy-paste to clients
+            full_text_parts = []
+            for category, items in headlines.items():
+                full_text_parts.append(category)
+                full_text_parts.append("")
+                for h in items:
+                    full_text_parts.append(f"* {h['line']}")
+                full_text_parts.append("")
+            full_text = "\n".join(full_text_parts).strip()
+    
+            # CME-style view. Group spread legs together so it is visually clear
+            # that rows sharing a spread timestamp belong to one block trade.
+            st.subheader("Block Trades")
+            rows = st.session_state.last_trade_rows
+            display_groups = []
+            used_spreads = set()
+    
+            for r in rows:
+                if r["type"].strip().lower() == "spread":
+                    spread_key = r["ct_dt"]
+                    if spread_key in used_spreads:
+                        continue
+                    used_spreads.add(spread_key)
+                    group = [
+                        x for x in rows
+                        if x["type"].strip().lower() == "spread" and x["ct_dt"] == spread_key
+                    ]
+                    display_groups.append(("spread", group))
+                else:
+                    display_groups.append(("single", [r]))
+    
+            for group_type, group in display_groups:
+                if group_type == "spread":
+                    st.markdown(
+                        f"**Spread trade · {group[0]['time_et']} ET · {len(group)} legs**"
+                    )
+    
+                table_rows = []
+                for r in group:
+                    table_rows.append({
+                        "Time (ET)": r["time_et"],
+                        "Type": r["type"],
+                        "Product": r["product"],
+                        "Symbol": r["sym"],
+                        "Qty": r["qty_raw"],
+                        "C/P & Strike": r["cp_strike"] or "",
+                        "B/S": r["side"],
+                        "Price": r["price"].replace("-", "'"),
+                    })
+    
+                st.dataframe(
+                    table_rows,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_order=["Time (ET)", "Type", "Product", "Symbol", "Qty", "C/P & Strike", "B/S", "Price"],
                 )
+    
+            st.divider()
+            st.text_area("Copy for headline", value=full_text, height=300)
+    
+    
 
-            table_rows = []
-            for r in group:
-                table_rows.append({
-                    "Time (ET)": r["time_et"],
-                    "Type": r["type"],
-                    "Product": r["product"],
-                    "Symbol": r["sym"],
-                    "Qty": r["qty_raw"],
-                    "C/P & Strike": r["cp_strike"] or "",
-                    "B/S": r["side"],
-                    "Price": r["price"].replace("-", "'"),
-                })
-
-            st.dataframe(
-                table_rows,
-                use_container_width=True,
-                hide_index=True,
-                column_order=["Time (ET)", "Type", "Product", "Symbol", "Qty", "C/P & Strike", "B/S", "Price"],
-            )
-
-        st.divider()
-        st.text_area("Copy for headline", value=full_text, height=300)
-
-# --- Non-blocking browser auto-refresh ---
-# The browser waits, then reloads the app. Unlike time.sleep(), the Streamlit
-# script finishes immediately, so the running/loading animation can disappear.
-st.components.v1.html(
-    f"""
-    <script>
-        setTimeout(function() {{
-            window.parent.location.reload();
-        }}, {int(refresh_seconds * 1000)});
-    </script>
-    """,
-    height=0,
-)
+live_block_feed()
 
 if manual_refresh:
     st.rerun()
