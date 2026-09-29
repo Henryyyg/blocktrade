@@ -133,7 +133,7 @@ def live_block_feed():
                 table_rows = []
                 for r in group:
                     table_rows.append({
-                        "Time (ET)": r["time_et"],
+                        "Time (ET/BST)": f"{r['time_et']}/{r['time_bst']}",
                         "Type": r["type"],
                         "Product": r["product"],
                         "Symbol": r["sym"],
