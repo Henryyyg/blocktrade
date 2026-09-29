@@ -317,35 +317,34 @@ def get_all_headlines(trade_date=None, seen_ids=None):
     new_ids = [e["id"] for e in emails if e["id"] not in seen_ids]
     all_ids = [e["id"] for e in emails]
     all_rows = []
-    seen_trade_signatures = set()
+    seen_leg_signatures = set()
 
     for e in emails:
         email_rows = parse_rows(e["body"], e["date"])
         if not email_rows:
             continue
 
-        # CME can deliver the same block alert more than once. Treat emails
-        # containing the exact same trade/legs as one block trade.
-        trade_signature = tuple(
-            (
-                r["ct_dt"],
-                r["type"],
-                r["product"],
-                r["sym"],
-                r["qty_raw"],
-                r["cp_strike"],
-                r["side"],
-                r["price"],
-            )
-            for r in email_rows
-        )
-        if trade_signature in seen_trade_signatures:
-            continue
-        seen_trade_signatures.add(trade_signature)
-
+        # CME may repeat an already-reported block inside a later alert. Deduplicate
+        # at leg level rather than requiring the entire email body to be identical.
+        unique_rows = []
         for row in email_rows:
+            leg_signature = (
+                row["ct_dt"],
+                row["type"].strip().lower(),
+                row["product"].strip(),
+                row["sym"].strip(),
+                row["qty_raw"].strip(),
+                row["cp_strike"].strip(),
+                row["side"].strip().lower(),
+                row["price"].strip(),
+            )
+            if leg_signature in seen_leg_signatures:
+                continue
+            seen_leg_signatures.add(leg_signature)
             row["email_id"] = e["id"]
-        all_rows.extend(email_rows)
+            unique_rows.append(row)
+
+        all_rows.extend(unique_rows)
 
     # Desk view: newest block trades first.
     all_rows.sort(key=lambda r: r["ct_dt"], reverse=True)
