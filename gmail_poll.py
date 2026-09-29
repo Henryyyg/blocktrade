@@ -71,19 +71,31 @@ def fetch_recent_block_trade_emails(service, hours_back=24):
         date_utc = datetime.fromtimestamp(date_ms / 1000, tz=timezone.utc)
         if date_utc < cutoff:
             continue
-        body = _extract_plaintext_body(msg["payload"])
+        body = _extract_email_body(msg["payload"])
         emails.append({"id": msg_meta["id"], "date": date_utc, "body": body})
     return emails
 
-def _extract_plaintext_body(payload):
-    """Walk the MIME parts to find the text/plain body, base64-decoded."""
-    if payload.get("mimeType") == "text/plain" and "data" in payload.get("body", {}):
+def _extract_mime_body(payload, wanted_mime):
+    """Recursively find and decode a particular MIME body."""
+    if payload.get("mimeType") == wanted_mime and "data" in payload.get("body", {}):
         return base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8", errors="replace")
     for part in payload.get("parts", []):
-        result = _extract_plaintext_body(part)
+        result = _extract_mime_body(part, wanted_mime)
         if result:
             return result
     return ""
+
+
+def _extract_email_body(payload):
+    """
+    Prefer CME's HTML body because multi-leg block trades use HTML rowspan
+    cells for TIME/TYPE. Fall back to text/plain only if HTML is unavailable.
+    """
+    html_body = _extract_mime_body(payload, "text/html")
+    if html_body:
+        return html_body
+    return _extract_mime_body(payload, "text/plain")
+
 
 # ---------- Parsing (same logic validated earlier) ----------
 
@@ -195,7 +207,7 @@ def parse_rows(plaintext_body, email_date_utc):
 def _option_details(cp_strike):
     """Convert CME notation such as C107.50 / P106.50 to desk wording."""
     value = cp_strike.strip()
-    match = re.match(r"^([CP])\\s*([0-9.]+)$", value, re.IGNORECASE)
+    match = re.match(r"^([CP])\s*([0-9.]+)$", value, re.IGNORECASE)
     if not match:
         return value
     option_type = "calls" if match.group(1).upper() == "C" else "puts"
