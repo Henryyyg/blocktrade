@@ -21,7 +21,10 @@ if not st.session_state.get("authenticated", False):
     password = st.text_input("Password", type="password")
 
     if st.button("Log in"):
-        if username == "Newsquawk" and password == "Blocktrade":
+        if (
+            username == st.secrets["app_username"]
+            and password == st.secrets["app_password"]
+        ):
             st.session_state.authenticated = True
             st.rerun()
         else:
