@@ -320,5 +320,5 @@ def get_all_headlines(trade_date=None, seen_ids=None):
     for e in emails:
         all_rows.extend(parse_rows(e["body"], e["date"]))
     headlines = build_headlines(all_rows)
-    return headlines, new_ids, all_ids
+    return headlines, new_ids, all_ids, all_rows
 
