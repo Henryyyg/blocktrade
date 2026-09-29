@@ -6,6 +6,7 @@ Community Cloud, or falls back to local token.json for local runs.
 import re
 import json
 import base64
+import html
 from datetime import datetime, timedelta, timezone
 
 from google.oauth2.credentials import Credentials
@@ -32,18 +33,10 @@ CATEGORY_KEYWORDS = [
     ("Treasury", "Treasuries"),
 ]
 
-ROW_RE = re.compile(
-    r'<td[^>]*><span>([\d:apmAPM\s]*)</span></td>\s*'
-    r'<td[^>]*><span>([^<]*)</span></td>\s*'
-    r'<td[^>]*><span>([^<]*)</span></td>\s*'
-    r'<td[^>]*><span>([^<]*)</span></td>\s*'
-    r'<td[^>]*><span>([^<]*)</span></td>\s*'
-    r'<td[^>]*><span>([^<]*)</span></td>\s*'
-    r'<td[^>]*><span>([^<]*)</span></td>\s*'
-    r'<td[^>]*><span>([^<]*)</span></td>\s*'
-    r'<td[^>]*><span>([^<]*)</span></td>',
-    re.IGNORECASE
-)
+TR_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.IGNORECASE | re.DOTALL)
+TD_RE = re.compile(r"<td[^>]*>(.*?)</td>", re.IGNORECASE | re.DOTALL)
+TAG_RE = re.compile(r"<[^>]+>")
+
 
 # ---------- Gmail auth ----------
 
@@ -95,7 +88,9 @@ def _extract_plaintext_body(payload):
 # ---------- Parsing (same logic validated earlier) ----------
 
 def clean(s):
-    return s.replace("&#39;", "'").replace("&amp;", "&").strip()
+    # CME table cells contain nested <span> tags and HTML entities.
+    text = TAG_RE.sub("", s)
+    return html.unescape(text).replace("\xa0", " ").strip()
 
 def price_to_headline_fmt(price_str):
     p = price_str.replace("'", "-")
@@ -132,17 +127,51 @@ def categorize(product_text):
     return product_text
 
 def parse_rows(plaintext_body, email_date_utc):
-    rows = ROW_RE.findall(plaintext_body)
+    """
+    Parse CME's HTML table.
+
+    CME uses rowspan for TIME and TYPE on multi-leg spreads. The first row has
+    all 9 columns; continuation legs only have the remaining 7 columns.
+    Carry the time/type forward so every leg is retained.
+    """
     date_hint = email_date_utc - timedelta(hours=5)  # rough UTC->CT calendar date anchor
     parsed = []
-    for row in rows:
-        time_raw, ttype, product, sym, net_price, qty, cp_strike, side, price = [clean(x) for x in row]
-        if not time_raw.strip():
+    current_time = ""
+    current_type = ""
+
+    for row_html in TR_RE.findall(plaintext_body):
+        cells = [clean(x) for x in TD_RE.findall(row_html)]
+
+        # Header/non-trade rows.
+        if len(cells) < 7:
             continue
+
+        if len(cells) >= 9:
+            time_raw, ttype, product, sym, net_price, qty, cp_strike, side, price = cells[:9]
+
+            # Skip the column-header row.
+            if time_raw.upper().startswith("TIME"):
+                continue
+
+            if time_raw:
+                current_time = time_raw
+            if ttype:
+                current_type = ttype
+        elif len(cells) == 7:
+            # TIME and TYPE are row-spanned from the first leg of the spread.
+            if not current_time:
+                continue
+            time_raw = current_time
+            ttype = current_type
+            product, sym, net_price, qty, cp_strike, side, price = cells
+        else:
+            continue
+
         try:
             ct_dt = parse_time_ct(time_raw, date_hint)
         except ValueError:
             continue
+
         et_dt, bst_dt = ct_to_et_bst(ct_dt)
         parsed.append({
             "ct_dt": ct_dt,
@@ -158,41 +187,8 @@ def parse_rows(plaintext_body, email_date_utc):
             "price": price_to_headline_fmt(price if price else net_price),
             "category": categorize(product),
         })
+
     return parsed
-
-def _option_details(cp_strike):
-    """Convert CME option notation such as C104.50 / P106.50 to headline wording."""
-    value = cp_strike.strip()
-    if not value:
-        return None
-    match = re.match(r"^([CP])\\s*([0-9.]+)$", value, re.IGNORECASE)
-    if not match:
-        return value
-    option_type = "calls" if match.group(1).upper() == "C" else "puts"
-    return f"{match.group(2)} {option_type}"
-
-
-def _action_word(side):
-    side = side.strip().lower()
-    if side == "buy":
-        return "Bought"
-    if side == "sell":
-        return "Sold"
-    return side.capitalize()
-
-
-def _format_leg(r):
-    """Format one option/futures leg in Henry's normal squawk style."""
-    action = _action_word(r["side"])
-    qty = r["qty"]
-    price_word = "for" if r["side"].strip().lower() == "buy" else "at"
-
-    if r["cp_strike"]:
-        option = _option_details(r["cp_strike"])
-        return f"{action} {qty} {r['product']}, {option} ({r['sym']}) {price_word} {r['price']}"
-
-    # Futures leg inside a spread
-    return f"{action} {qty} {r['product']} ({r['sym']}) at {r['price']}"
 
 
 def build_headlines(parsed_rows):
