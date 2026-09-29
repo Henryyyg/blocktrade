@@ -143,6 +143,16 @@ def categorize(product_text):
             return header
     return product_text
 
+def debug_table_rows(email_body):
+    """Return CME table rows/cells for temporary parser diagnostics."""
+    debug = []
+    for i, row_html in enumerate(TR_RE.findall(email_body)):
+        cells = [clean(x) for x in TD_RE.findall(row_html)]
+        if cells:
+            debug.append({"row": i, "cell_count": len(cells), "cells": cells})
+    return debug
+
+
 def parse_rows(plaintext_body, email_date_utc):
     """
     Parse CME's HTML table.
@@ -313,3 +323,17 @@ def get_all_headlines(hours_back=24, seen_ids=None):
 
     headlines = build_headlines(all_rows)
     return headlines, new_ids, all_ids
+
+
+def get_parser_debug(hours_back=24):
+    """Temporary diagnostic: return parsed table rows from today's CME emails."""
+    service = get_gmail_service()
+    emails = fetch_recent_block_trade_emails(service, hours_back=hours_back)
+    output = []
+    for e in emails:
+        output.append({
+            "id": e["id"],
+            "date": e["date"].isoformat(),
+            "rows": debug_table_rows(e["body"]),
+        })
+    return output
