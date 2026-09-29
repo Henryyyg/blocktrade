@@ -261,7 +261,7 @@ def build_headlines(parsed_rows):
 
     for r in parsed_rows:
         if r["type"].strip().lower() == "spread":
-            spread_groups.setdefault(r["ct_dt"], []).append(r)
+            spread_groups.setdefault((r.get("email_id"), r["ct_dt"]), []).append(r)
         else:
             singles.append(r)
 
@@ -318,7 +318,10 @@ def get_all_headlines(trade_date=None, seen_ids=None):
     all_ids = [e["id"] for e in emails]
     all_rows = []
     for e in emails:
-        all_rows.extend(parse_rows(e["body"], e["date"]))
+        email_rows = parse_rows(e["body"], e["date"])
+        for row in email_rows:
+            row["email_id"] = e["id"]
+        all_rows.extend(email_rows)
     headlines = build_headlines(all_rows)
     return headlines, new_ids, all_ids, all_rows
 
