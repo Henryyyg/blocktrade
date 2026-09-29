@@ -5,39 +5,26 @@ Setup: see gmail_api_setup.md. Requires credentials.json + token.json in this fo
 Run: streamlit run app.py
 """
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import streamlit as st
-import gmail_poll
-
-get_all_headlines = gmail_poll.get_all_headlines
+from gmail_poll import get_all_headlines
 
 st.set_page_config(page_title="Block Trade Headlines", layout="wide")
 
 REFRESH_SECONDS = 60
-HOURS_BACK = 24
 
 st.title("Block Trade Headlines")
 
 # --- Sidebar controls ---
 with st.sidebar:
     st.header("Settings")
-    hours_back = st.number_input("Look back (hours)", min_value=1, max_value=72, value=HOURS_BACK)
+    today_et = datetime.now(ZoneInfo("America/New_York")).date()
+    trade_date = st.date_input("Trade date (ET)", value=today_et, max_value=today_et)
     refresh_seconds = st.number_input("Auto-refresh every (seconds)", min_value=15, max_value=600, value=REFRESH_SECONDS)
     manual_refresh = st.button("Refresh now")
-    debug_parser = st.checkbox("Parser debug", value=False)
     st.caption("Auto-refreshing. Turn this tab's auto-refresh off by closing it — no data is lost, it just re-polls on reopen.")
 
-
-# --- Temporary parser diagnostic ---
-if debug_parser:
-    try:
-        st.subheader("Parser debug")
-        debug_fn = getattr(gmail_poll, "get_parser_debug", None)
-        if debug_fn is None:
-            st.warning("Parser debug helper is not loaded yet. Refresh once after deployment.")
-        else:
-            st.json(debug_fn(hours_back=hours_back))
-    except Exception as e:
-        st.error(f"Parser debug error: {e}")
 
 # --- Session state for tracking seen emails ---
 if "seen_ids" not in st.session_state:
@@ -51,7 +38,7 @@ if "last_checked" not in st.session_state:
 error = None
 try:
     headlines, new_ids, all_ids = get_all_headlines(
-        hours_back=hours_back,
+        trade_date=trade_date,
         seen_ids=st.session_state.seen_ids
     )
     st.session_state.last_headlines = headlines
@@ -67,11 +54,11 @@ except Exception as e:
 if error:
     st.error(error)
 else:
-    st.caption(f"Last checked: {st.session_state.last_checked} · looking back {hours_back}h")
+    st.caption(f"Last checked: {st.session_state.last_checked} · trade date {trade_date.strftime('%d/%m/%Y')} ET")
 
     headlines = st.session_state.last_headlines
     if not headlines:
-        st.info("No block trades found in this window yet.")
+        st.info("No block trades found for this ET date.")
     else:
         # Build plain-text version for easy copy-paste to clients
         full_text_parts = []
