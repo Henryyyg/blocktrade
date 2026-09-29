@@ -102,9 +102,19 @@ else:
         st.divider()
         st.text_area("Copy for headline", value=full_text, height=300)
 
-# --- Auto-refresh loop ---
-if not manual_refresh:
-    time.sleep(refresh_seconds)
-    st.rerun()
-else:
+# --- Non-blocking browser auto-refresh ---
+# The browser waits, then reloads the app. Unlike time.sleep(), the Streamlit
+# script finishes immediately, so the running/loading animation can disappear.
+st.components.v1.html(
+    f"""
+    <script>
+        setTimeout(function() {{
+            window.parent.location.reload();
+        }}, {int(refresh_seconds * 1000)});
+    </script>
+    """,
+    height=0,
+)
+
+if manual_refresh:
     st.rerun()
