@@ -6,6 +6,8 @@ Run: streamlit run app.py
 """
 import time
 import hashlib
+import base64
+from pathlib import Path
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import streamlit as st
@@ -15,6 +17,19 @@ st.set_page_config(page_title="Block Trade Headlines", layout="wide")
 
 
 REFRESH_SECONDS = 60
+SOUND_FILE = Path(__file__).with_name("10-billion.mp3")
+
+
+def play_notification_sound():
+    """Play the uploaded block-trade alert sound without showing an audio player."""
+    if not SOUND_FILE.exists():
+        st.warning("Notification sound file 10-billion.mp3 was not found.")
+        return
+    audio_b64 = base64.b64encode(SOUND_FILE.read_bytes()).decode()
+    st.components.v1.html(
+        f'<audio autoplay><source src="data:audio/mpeg;base64,{audio_b64}" type="audio/mpeg"></audio>',
+        height=0,
+    )
 
 st.title("Block Trade Headlines")
 
@@ -24,6 +39,9 @@ with st.sidebar:
     today_et = datetime.now(ZoneInfo("America/New_York")).date()
     trade_date = st.date_input("Trade date (ET)", value=today_et, max_value=today_et)
     notifications_on = st.checkbox("Sound notification for new blocks", value=True)
+    test_sound = st.button("🔊 Test notification sound")
+    if test_sound:
+        play_notification_sound()
     manual_refresh = st.button("Refresh now")
     st.caption("Live feed checks automatically every 60 seconds.")
 
@@ -58,7 +76,7 @@ def live_block_feed():
         if st.session_state.alerts_initialized and new_ids:
             st.toast(f"{len(new_ids)} new block trade email(s) found", icon="📬")
             if notifications_on:
-                st.components.v1.html('<audio autoplay><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=" type="audio/wav"></audio>', height=0)
+                play_notification_sound()
         st.session_state.alerts_initialized = True
     except FileNotFoundError:
         error = "credentials.json or token.json not found. Follow gmail_api_setup.md first."
