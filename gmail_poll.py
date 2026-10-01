@@ -58,6 +58,22 @@ def get_gmail_service():
 
 # ---------- Fetching ----------
 
+# Cache each full Gmail message after its first download. The 60-second poll
+# still asks Gmail for the lightweight message-ID list, but old messages are
+# served from Streamlit's cache instead of consuming Gmail "messages.get" quota.
+if _HAS_STREAMLIT:
+    @st.cache_data(ttl=86400, show_spinner=False)
+    def _get_message_cached(_service, message_id):
+        return _service.users().messages().get(
+            userId="me", id=message_id, format="full"
+        ).execute()
+else:
+    def _get_message_cached(_service, message_id):
+        return _service.users().messages().get(
+            userId="me", id=message_id, format="full"
+        ).execute()
+
+
 def fetch_block_trade_emails_for_date(service, trade_date):
     """Return CME block-trade emails received on the selected New York date."""
     eastern = ZoneInfo("America/New_York")
@@ -67,7 +83,7 @@ def fetch_block_trade_emails_for_date(service, trade_date):
     results = service.users().messages().list(userId="me", q=query, maxResults=100).execute()
     emails = []
     for msg_meta in results.get("messages", []):
-        msg = service.users().messages().get(userId="me", id=msg_meta["id"], format="full").execute()
+        msg = _get_message_cached(service, msg_meta["id"])
         date_ms = int(msg["internalDate"])
         date_utc = datetime.fromtimestamp(date_ms / 1000, tz=timezone.utc)
         if date_utc.astimezone(eastern).date() != trade_date:
