@@ -21,13 +21,32 @@ SOUND_FILE = Path(__file__).with_name("10-billion.mp3")
 
 
 def play_notification_sound():
-    """Play the uploaded block-trade alert sound without showing an audio player."""
+    """Play the uploaded alert sound. A visible player is avoided."""
     if not SOUND_FILE.exists():
         st.warning("Notification sound file 10-billion.mp3 was not found.")
         return
     audio_b64 = base64.b64encode(SOUND_FILE.read_bytes()).decode()
+    # A fresh component key/content nonce forces the browser to create a new
+    # audio element for every alert/test. playsinline improves browser support.
+    nonce = time.time_ns()
     st.components.v1.html(
-        f'<audio autoplay><source src="data:audio/mpeg;base64,{audio_b64}" type="audio/mpeg"></audio>',
+        f"""
+        <audio id="block-alert-{nonce}" preload="auto" playsinline>
+          <source src="data:audio/mpeg;base64,{audio_b64}" type="audio/mpeg">
+        </audio>
+        <script>
+          const audio = document.getElementById("block-alert-{nonce}");
+          audio.volume = 1.0;
+          audio.play().catch(() => {{
+            // Browsers can block autoplay until the page has had a user gesture.
+            // The test button provides that gesture; show the player only if
+            // playback is still blocked so the user can enable audio manually.
+            audio.controls = true;
+            audio.style.width = "1px";
+            audio.style.height = "1px";
+          }});
+        </script>
+        """,
         height=0,
     )
 
