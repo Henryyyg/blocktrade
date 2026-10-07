@@ -322,53 +322,78 @@ def build_headlines(parsed_rows):
 
     return ordered
 
+def _row_signature(row):
+    """Stable identity for one CME trade leg, independent of Gmail message ID."""
+    return (
+        row["ct_dt"],
+        row["type"].strip().lower(),
+        row["product"].strip().lower(),
+        row["sym"].strip().upper(),
+        row["qty_raw"].replace(",", "").strip(),
+        row["cp_strike"].replace(" ", "").strip().upper(),
+        row["side"].strip().lower(),
+        row["price"].replace("'", "-").strip(),
+    )
+
+
+def _trade_signature(rows):
+    """Stable identity for a complete CME block/spread."""
+    return tuple(_row_signature(row) for row in rows)
+
+
 def get_all_headlines(trade_date=None, seen_ids=None):
     """Return headlines for one selected New York/ET calendar date."""
     seen_ids = seen_ids or set()
     eastern = ZoneInfo("America/New_York")
     if trade_date is None:
         trade_date = datetime.now(eastern).date()
+
     service = get_gmail_service()
     emails = fetch_block_trade_emails_for_date(service, trade_date)
     new_ids = [e["id"] for e in emails if e["id"] not in seen_ids]
     all_ids = [e["id"] for e in emails]
-    all_rows = []
-    seen_trade_legs = set()
 
-    # Gmail results are normally newest-first. Keep the first complete occurrence
-    # of each CME trade and suppress repeated legs from older/later alert emails.
+    # Deduplicate complete trades rather than individual legs or whole emails.
+    # CME can resend the same block in a separate Gmail message. Group each
+    # email into complete trades first, then suppress an exact repeated trade.
+    all_rows = []
+    seen_trades = set()
+
     for e in emails:
         email_rows = parse_rows(e["body"], e["date"])
         if not email_rows:
             continue
 
-        email_signatures = []
+        groups = []
+        current_group = []
+        current_key = None
+
         for row in email_rows:
-            sig = (
-                row["ct_dt"],
-                row["type"].strip().lower(),
-                row["product"].strip(),
-                row["sym"].strip(),
-                row["qty_raw"].strip(),
-                row["cp_strike"].strip(),
-                row["side"].strip().lower(),
-                row["price"].strip(),
-            )
-            email_signatures.append(sig)
+            if row["type"].strip().lower() == "spread":
+                key = ("spread", row["ct_dt"])
+            else:
+                # Each outright row is its own trade.
+                key = ("single", id(row))
 
-        # If any leg in this email has already been seen, this is CME repeating
-        # the same block alert. Skip the whole email so we never leave an orphan
-        # one-leg "spread" behind after deduplication.
-        if any(sig in seen_trade_legs for sig in email_signatures):
-            continue
+            if current_group and key != current_key:
+                groups.append(current_group)
+                current_group = []
+            current_group.append(row)
+            current_key = key
 
-        for row, sig in zip(email_rows, email_signatures):
-            seen_trade_legs.add(sig)
-            row["email_id"] = e["id"]
-            all_rows.append(row)
+        if current_group:
+            groups.append(current_group)
 
-    # Desk view: newest block trades first.
+        for group in groups:
+            signature = _trade_signature(group)
+            if signature in seen_trades:
+                continue
+            seen_trades.add(signature)
+
+            for row in group:
+                row["email_id"] = e["id"]
+                all_rows.append(row)
+
     all_rows.sort(key=lambda r: r["ct_dt"], reverse=True)
     headlines = build_headlines(all_rows)
     return headlines, new_ids, all_ids, all_rows
-
