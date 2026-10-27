@@ -143,8 +143,11 @@ def parse_time_ct(time_str, date_hint):
 
 def ct_to_et_bst(ct_dt):
     et_dt = ct_dt + timedelta(hours=CT_TO_ET_HOURS)
-    bst_dt = et_dt + timedelta(hours=ET_TO_BST_HOURS)
-    return et_dt, bst_dt
+    # Convert actual time zones so UK output is GMT in winter, BST in summer.
+    chicago = ct_dt.replace(tzinfo=ZoneInfo("America/Chicago"))
+    eastern = chicago.astimezone(ZoneInfo("America/New_York"))
+    london = chicago.astimezone(ZoneInfo("Europe/London"))
+    return eastern, london
 
 def fmt_hhmm(dt):
     return dt.strftime("%H:%M")
@@ -219,6 +222,7 @@ def parse_rows(plaintext_body, email_date_utc):
             "ct_dt": ct_dt,
             "time_et": fmt_hhmm(et_dt),
             "time_bst": fmt_hhmm(bst_dt),
+            "uk_is_bst": bool(bst_dt.dst()),
             "type": ttype,
             "product": product,
             "sym": sym,
@@ -286,7 +290,7 @@ def build_headlines(parsed_rows):
     def add_headline(category, r, text):
         headlines_by_category.setdefault(category, []).append({
             "sort_key": r["ct_dt"],
-            "line": f"{r['time_et']}ET/{r['time_bst']}BST: {text}"
+            "line": f"{r['time_et']}ET/{r['time_bst']}{'BST' if r['uk_is_bst'] else 'GMT'}: {text}"
         })
 
     # Outright futures / options
